@@ -1,9 +1,10 @@
 /**
  * Matari Coffee Co. — Time Clock sync
  * ------------------------------------------------------------------
- * Paste this into Extensions > Apps Script on the Google Sheet that
- * should hold the hours, then Deploy > New deployment > Web app with
- * "Execute as: Me" and "Who has access: Anyone".
+ * A standalone Apps Script project that writes into the spreadsheet named
+ * by SHEET_ID below. Deploy it with Deploy > New deployment > Web app,
+ * "Execute as: Me" and "Who has access: Anyone", then paste the resulting
+ * /exec URL into the app's Settings.
  *
  * The iPad posts here every time somebody punches. Nothing is ever
  * deleted — an edited shift updates its own row in place.
@@ -12,6 +13,10 @@
  * word into the app's Settings. Then only your iPad can write here.
  */
 const TOKEN = '';
+
+/* The spreadsheet this writes into. */
+const SHEET_ID = '12SOzoAS9ErtyPdvJNt25mSD6P7evewDMqCDE6O4tQXU';
+function ss_() { return SpreadsheetApp.openById(SHEET_ID); }
 
 /* Columns A-K are for the manager to read. L-N are bookkeeping the app uses
    to rebuild itself exactly on a replacement iPad — ignore them. */
@@ -29,7 +34,7 @@ function json_(o) {
 }
 
 function sheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = ss_();
   let sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
@@ -47,6 +52,14 @@ function auth_(tok) {
 /* ---------------------------------------------------------------- */
 
 function doPost(e) {
+  /* Run this from the editor with no arguments to authorize the script
+     and confirm it can reach the spreadsheet. */
+  if (!e || !e.postData) {
+    sheet_('Punches', PUNCH_HEADERS);
+    sheet_('Staff', STAFF_HEADERS);
+    ensureTotals_();
+    return json_({ ok: true, note: 'Authorized. Connected to: ' + ss_().getName() });
+  }
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(25000);
@@ -58,7 +71,7 @@ function doPost(e) {
     if (!auth_(body.token)) return json_({ ok: false, error: 'Wrong sync word' });
 
     if (body.action === 'ping') {
-      return json_({ ok: true, sheet: SpreadsheetApp.getActiveSpreadsheet().getName() });
+      return json_({ ok: true, sheet: ss_().getName() });
     }
     if (body.action === 'upsert' || body.action === 'sync') {
       const n = upsertPunches_(body.punches || []);
@@ -87,7 +100,7 @@ function doGet(e) {
       config: readConfig_()
     });
   }
-  return json_({ ok: true, sheet: SpreadsheetApp.getActiveSpreadsheet().getName() });
+  return json_({ ok: true, sheet: ss_().getName() });
 }
 
 /* ---------------------------------------------------------------- */
@@ -135,23 +148,21 @@ function saveConfig_(cfg) {
 }
 
 function readRows_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ss.getSheetByName(name);
+  const sh = ss_().getSheetByName(name);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, headers.length).getValues()
     .filter(function (r) { return String(r[0]).length > 0; });
 }
 
 function readConfig_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ss.getSheetByName('Config');
+  const sh = ss_().getSheetByName('Config');
   if (!sh || sh.getLastRow() < 2) return null;
   return sh.getRange(2, 2).getValue() || null;
 }
 
 /** A live per-week, per-person total the manager can just look at. */
 function ensureTotals_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = ss_();
   if (ss.getSheetByName('Totals')) return;
   const sh = ss.insertSheet('Totals');
   sh.getRange('A1').setFormula(
@@ -162,4 +173,15 @@ function ensureTotals_() {
   sh.getRange('A1:C1').setFontWeight('bold');
   sh.setColumnWidth(1, 130);
   sh.setColumnWidth(2, 160);
+}
+
+
+/** Run this once to authorize the script and prove it can reach the sheet. */
+function setup() {
+  sheet_('Punches', PUNCH_HEADERS);
+  sheet_('Staff', STAFF_HEADERS);
+  ensureTotals_();
+  const name = ss_().getName();
+  Logger.log('Connected to: ' + name);
+  return name;
 }

@@ -243,7 +243,7 @@ table.ts td.r,table.ts th.r{text-align:right;padding-right:0}
 
 <!-- ===== MANAGER ===== -->
 <div class="screen" id="scr-mgr">
-  <div class="mhead"><h2>Manager</h2><button class="btn sm ghost" id="mgr-done">Done</button></div>
+  <div class="mhead"><h2 id="mgr-title">Manager</h2><button class="btn sm ghost" id="mgr-done">Done</button></div>
   <div class="tabs" id="tabs"></div>
   <div class="mbody" id="mbody"></div>
 </div>
@@ -262,12 +262,13 @@ const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Satur
 let S = null, pin = "", confirmTimer = null, pendingPunch = null;
 
 function defaults(){
-  return { v:1, setup:false, managerPin:null, shopName:"Matari Coffee Co.",
+  return { v:1, setup:true, managerPin:"1356", managerName:"Aiman",
+    shopName:"Matari Coffee Co.",
     employees:[], shifts:[], reports:[],
     sync:{ lastOk:null, lastError:null, lastTry:null },
     settings:{ email:"", weekStart:1, autoEmail:false, w3key:"",
                autoReturn:5000, otHours:40, forceHours:12,
-               sheetUrl:"", sheetToken:"" } };
+               sheetUrl:"https://script.google.com/macros/s/AKfycbzG_8hXDC4WO355PW8ju5n-qXZ3DObxmoyRwHNZG5UE62mzyIsI92-9yUN0ijhoSU_a/exec", sheetToken:"" } };
 }
 function load(){
   try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch(e){ S = defaults(); }
@@ -717,7 +718,12 @@ function askPin(onOk){
   f.onkeydown = e => { if(e.key==="Enter") go(); };
   f.oninput = () => { if(f.value.length===4) setTimeout(go,120); };
 }
-function openMgr(tab){ mgrTab = tab||"staff"; show("scr-mgr"); renderMgr(); }
+function openMgr(tab){
+  mgrTab = tab||"staff";
+  document.getElementById("mgr-title").textContent =
+    S.managerName ? "Manager \u00b7 " + S.managerName : "Manager";
+  show("scr-mgr"); renderMgr();
+}
 function renderMgr(){
   document.getElementById("tabs").innerHTML = TABS.map(t =>
     '<button class="tab'+(mgrTab===t[0]?" on":"")+'" data-tab="'+t[0]+'">'+t[1]+"</button>").join("");
@@ -1013,6 +1019,8 @@ function viewSettings(){
       'that ends after midnight stays in Sunday\'s week.</div></label>'+
     '<label class="fld"><span>Flag overtime above</span>'+
       '<input id="st-ot" type="number" min="1" max="99" value="'+s.otHours+'"><div class="hint">Hours per week.</div></label>'+
+    '<label class="fld"><span>Manager name</span><input id="st-mgrname" value="'+esc(S.managerName||"")+
+      '" placeholder="e.g. Aiman" autocapitalize="words"></label>'+
     '<label class="fld"><span>Manager code</span><input id="st-pin" type="tel" inputmode="numeric" '+
       'maxlength="4" value="'+esc(S.managerPin||"")+'"></label>'+
     '<button class="btn wide" id="st-save">Save settings</button></div>'+
@@ -1081,6 +1089,8 @@ document.getElementById("mbody").addEventListener("click", e => {
     if(!/^\d{4}$/.test(p)) return toast("Manager code must be 4 digits");
     if(S.employees.some(x => x.pin===p)) return toast("A team member already uses that code");
     S.managerPin = p;
+    const mn = document.getElementById("st-mgrname");
+    if(mn) S.managerName = mn.value.trim();
     S.shopName = document.getElementById("st-shop").value.trim() || "Matari Coffee Co.";
     S.settings.weekStart = +document.getElementById("st-ws").value;
     S.settings.otHours = Math.max(1, +document.getElementById("st-ot").value || 40);
