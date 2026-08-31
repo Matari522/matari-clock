@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Matari Coffee Co. — Time Clock</title>
+<meta name="theme-color" content="#0C141C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Matari Clock">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<style>
+:root{
+  --ink:#0C141C; --panel:#15212C; --panel2:#1E2C3A; --panel3:#26374A;
+  --gold:#F2C230; --gold2:#FFD75E; --lime:#9FC53D;
+  --cream:#F7F2E7; --muted:#8A9AAB;
+  --in:#9FC53D; --out:#D9964A; --bad:#D9694A;
+  --line:rgba(247,242,231,.10);
+  --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
+  --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--ink);color:var(--cream);
+  font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+input,select,textarea{font:inherit}
+.screen{position:fixed;inset:0;display:none;flex-direction:column;
+  padding:calc(var(--sat) + 14px) calc(var(--sar) + 18px) calc(var(--sab) + 14px) calc(var(--sal) + 18px)}
+.screen.on{display:flex}
+
+/* ---------- wordmark ---------- */
+.wordmark{font-family:Georgia,"Times New Roman",serif;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--gold);line-height:1;
+  font-size:clamp(26px,4.4vw,46px)}
+.wordmark small{display:block;font:700 clamp(9px,1.1vw,12px)/1 Georgia,serif;
+  letter-spacing:.42em;color:var(--gold);opacity:.85;margin-top:9px;padding-left:.1em}
+
+/* ---------- clock ---------- */
+#scr-clock{flex-direction:row;gap:26px}
+.left{flex:1;min-width:0;display:flex;flex-direction:column}
+.right{width:min(46vw,420px);display:flex;flex-direction:column;justify-content:center}
+.bigclock{font-variant-numeric:tabular-nums;font-weight:200;
+  font-size:clamp(56px,13vw,132px);line-height:1;margin:auto 0 0;letter-spacing:-.02em;color:var(--cream)}
+.bigclock .ampm{font-size:.3em;font-weight:400;color:var(--gold);margin-left:.15em;letter-spacing:.08em}
+.bigdate{color:var(--muted);font-size:clamp(14px,2vw,20px);margin:10px 0 auto}
+.onnow{border-top:1px solid var(--line);padding-top:12px}
+.onnow h4{margin:0 0 10px;font:600 11px/1 -apple-system,sans-serif;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;max-height:88px;overflow:auto}
+.chip{display:flex;align-items:center;gap:8px;background:rgba(159,197,61,.14);
+  border:1px solid rgba(159,197,61,.42);color:#DCEBAE;padding:7px 13px;border-radius:99px;font-size:14px}
+.chip b{font-weight:600}
+.chip span{color:var(--lime);font-variant-numeric:tabular-nums}
+.chips .none{color:var(--muted);font-size:14px;border:0;background:none;padding:0}
+
+/* ---------- keypad ---------- */
+.prompt{text-align:center;color:var(--muted);font-size:15px;margin-bottom:14px;min-height:22px}
+.dots{display:flex;justify-content:center;gap:16px;margin-bottom:22px;height:20px}
+.dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--panel3);transition:.15s}
+.dot.f{background:var(--gold);border-color:var(--gold);transform:scale(1.06)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(9px,1.6vh,15px)}
+.key{aspect-ratio:1.45/1;min-height:56px;border-radius:16px;background:var(--panel);
+  border:1px solid var(--line);font-size:clamp(24px,3.6vh,34px);font-weight:300;
+  display:flex;align-items:center;justify-content:center;transition:.08s}
+.key:active{background:var(--panel2);border-color:var(--gold);transform:scale(.96)}
+.key.util{font-size:clamp(14px,2vh,17px);color:var(--muted);font-weight:500}
+.gear{position:absolute;top:calc(var(--sat) + 8px);right:calc(var(--sar) + 10px);
+  width:46px;height:46px;border-radius:50%;color:var(--panel3);font-size:21px;
+  display:flex;align-items:center;justify-content:center;z-index:5}
+.gear:active{background:var(--panel);color:var(--gold)}
+.banner{background:linear-gradient(95deg,var(--gold),var(--gold2));color:#14202B;
+  border-radius:13px;padding:11px 16px;margin-bottom:14px;display:flex;
+  align-items:center;gap:11px;font-weight:700;font-size:15px;width:100%}
+.banner .arrow{margin-left:auto;font-size:19px}
+
+/* ---------- confirm ---------- */
+#scr-confirm{align-items:center;justify-content:center;text-align:center}
+#scr-confirm.in{background:linear-gradient(160deg,#4C7320,#2C4614)}
+#scr-confirm.out{background:linear-gradient(160deg,#8A5E1C,#4E3510)}
+.cf-badge{font:700 13px/1 -apple-system,sans-serif;letter-spacing:.26em;
+  text-transform:uppercase;opacity:.85;margin-bottom:20px}
+.cf-name{font-size:clamp(38px,8vw,74px);font-weight:300;line-height:1.1;margin-bottom:8px}
+.cf-time{font-size:clamp(22px,3.6vw,34px);font-variant-numeric:tabular-nums;opacity:.92}
+.cf-sub{margin-top:26px;font-size:clamp(15px,2vw,19px);opacity:.85;line-height:1.75}
+.cf-sub b{font-weight:700;opacity:1}
+.cf-bar{position:absolute;left:0;bottom:0;height:4px;background:rgba(255,255,255,.6);
+  width:100%;transform-origin:left;animation:drain var(--dur,5s) linear forwards}
+@keyframes drain{to{transform:scaleX(0)}}
+
+/* ---------- manager ---------- */
+#scr-mgr{padding:0}
+.mhead{display:flex;align-items:center;gap:14px;padding:calc(var(--sat) + 12px) 18px 0}
+.mhead h2{margin:0;font-size:19px;font-weight:600;flex:1}
+.tabs{display:flex;gap:6px;padding:12px 18px 0;overflow-x:auto}
+.tab{padding:9px 15px;border-radius:10px;color:var(--muted);font-size:15px;white-space:nowrap}
+.tab.on{background:var(--panel);color:var(--gold);font-weight:600}
+.mbody{flex:1;overflow:auto;padding:16px 18px calc(var(--sab) + 28px);-webkit-overflow-scrolling:touch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:12px}
+.card h3{margin:0 0 12px;font-size:15px;font-weight:600}
+.row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0}
+.row .nm{font-size:16px;font-weight:500}
+.row .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.code{font-variant-numeric:tabular-nums;letter-spacing:.14em;color:var(--gold);font-weight:600}
+.btn{background:var(--gold);color:#14202B;padding:11px 18px;border-radius:11px;font-weight:700;font-size:15px}
+.btn:active{opacity:.75}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--cream);font-weight:500}
+.btn.sm{padding:8px 13px;font-size:14px;border-radius:9px}
+.btn.danger{background:var(--bad);color:#fff}
+.btn.wide{display:block;width:100%;text-align:center;margin-top:6px}
+.btn[disabled]{opacity:.45}
+label.fld{display:block;margin-bottom:13px}
+label.fld span{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+label.fld input,label.fld select,label.fld textarea{width:100%;background:var(--ink);
+  border:1px solid var(--line);color:var(--cream);padding:12px 13px;border-radius:10px;
+  -webkit-appearance:none;appearance:none}
+label.fld input:focus,label.fld select:focus{outline:0;border-color:var(--gold)}
+.hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.55}
+.pill{font-size:12px;padding:4px 10px;border-radius:99px;font-weight:600;white-space:nowrap}
+.pill.in{background:rgba(159,197,61,.20);color:var(--lime)}
+.pill.out{background:rgba(138,154,171,.16);color:var(--muted)}
+.pill.warn{background:rgba(242,194,48,.18);color:var(--gold)}
+.pill.bad{background:rgba(217,105,74,.24);color:#F0A08C}
+.wknav{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.wknav .lbl{flex:1;text-align:center;font-size:16px;font-weight:600}
+.wknav button{width:44px;height:44px;border-radius:11px;background:var(--panel);
+  border:1px solid var(--line);font-size:19px;display:flex;align-items:center;justify-content:center}
+table.ts{width:100%;border-collapse:collapse;font-size:14px}
+table.ts th{text-align:left;font:600 11px/1 -apple-system,sans-serif;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);padding:0 8px 9px 0}
+table.ts td{padding:9px 8px 9px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+table.ts td.r,table.ts th.r{text-align:right;padding-right:0}
+.tot{display:flex;justify-content:space-between;align-items:baseline;
+  border-top:2px solid var(--gold);margin-top:14px;padding-top:13px}
+.tot .n{font-size:15px;color:var(--muted)}
+.tot .v{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--gold)}
+.empty{color:var(--muted);text-align:center;padding:34px 12px;font-size:15px;line-height:1.6}
+.nd{font-size:10px;color:var(--gold);vertical-align:super;margin-left:3px;font-weight:700}
+
+.mask{position:fixed;inset:0;background:rgba(6,11,16,.76);display:none;
+  align-items:center;justify-content:center;padding:20px;z-index:50;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.mask.on{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  padding:20px;width:100%;max-width:440px;max-height:88vh;overflow:auto}
+.modal h3{margin:0 0 16px;font-size:18px}
+.modal .acts{display:flex;gap:10px;margin-top:8px}
+.modal .acts .btn{flex:1;text-align:center}
+#txtArea{width:100%;height:230px;background:var(--ink);color:var(--cream);
+  border:1px solid var(--line);border-radius:10px;padding:12px;
+  font:12px/1.5 ui-monospace,Menlo,monospace;-webkit-user-select:text;user-select:text;
+  white-space:pre;overflow:auto}
+.toast{position:fixed;left:50%;bottom:calc(var(--sab) + 26px);transform:translateX(-50%);
+  background:var(--gold);color:#14202B;padding:13px 22px;border-radius:99px;
+  font-weight:700;font-size:15px;z-index:90;opacity:0;pointer-events:none;
+  transition:.25s;max-width:86vw;text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-6px)}
+
+/* Portrait / narrow: stack, but keep the pad bounded so it can never
+   overflow off the bottom of the screen. */
+/* Portrait / narrow: one centred column. `display:contents` lifts the left
+   column's children up so they can be ordered against the keypad, and the pad
+   is height-bounded so it can never run off the bottom. */
+@media (max-width:820px),(orientation:portrait){
+  #scr-clock{flex-direction:column;align-items:center;gap:0;text-align:center}
+  .left{display:contents}
+  .wordmark{order:1}
+  .bigclock{order:2;font-size:clamp(44px,12vw,88px);margin:18px 0 0}
+  .bigdate{order:3;font-size:16px;margin:6px 0 0}
+  .right{order:4;width:100%;max-width:420px;flex:1 1 auto;justify-content:center}
+  .onnow{order:5;width:100%;margin-top:auto;padding-top:12px}
+  .chips{justify-content:center;max-height:56px}
+  .prompt{margin-bottom:12px}
+  .dots{margin-bottom:16px;gap:14px}
+  .pad{gap:9px}
+  .key{aspect-ratio:auto;height:clamp(46px,8vh,72px);min-height:0;
+       font-size:clamp(20px,3.2vh,30px);border-radius:14px}
+  .key.util{font-size:clamp(13px,1.9vh,16px)}
+  .banner{padding:10px 14px;font-size:14px;margin-bottom:12px}
+}
+/* Short landscape (e.g. split view): don't let square keys grow past the fold */
+@media (min-width:821px) and (max-height:700px){
+  .key{aspect-ratio:auto;height:clamp(44px,9vh,74px);min-height:0}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== SETUP ===== -->
+<div class="screen" id="scr-setup">
+  <div style="margin:auto;width:100%;max-width:430px">
+    <div class="wordmark" style="text-align:center;margin-bottom:26px">Matari<small>Coffee Co.</small></div>
+    <div class="card">
+      <label class="fld"><span>Manager code (4 digits)</span>
+        <input id="su-pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></label>
+      <label class="fld"><span>Confirm manager code</span>
+        <input id="su-pin2" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></label>
+      <label class="fld"><span>Manager email — weekly hours go here</span>
+        <input id="su-email" type="email" inputmode="email" autocapitalize="off" placeholder="you@matari.coffee"></label>
+      <button class="btn wide" id="su-go">Start</button>
+    </div>
+    <p class="hint" style="text-align:center">This code opens the manager panel. Staff never need it.</p>
+  </div>
+</div>
+
+<!-- ===== CLOCK ===== -->
+<div class="screen" id="scr-clock">
+  <button class="gear" id="btn-gear" aria-label="Manager">&#9881;</button>
+  <div class="left">
+    <div class="wordmark">Matari<small>Coffee Co.</small></div>
+    <div class="bigclock" id="liveclock">--:--</div>
+    <div class="bigdate" id="livedate"></div>
+    <div class="onnow"><h4>On the clock</h4><div class="chips" id="chips"></div></div>
+  </div>
+  <div class="right">
+    <div id="banner-slot"></div>
+    <div class="prompt" id="prompt">Enter your 4-digit code</div>
+    <div class="dots" id="dots"></div>
+    <div class="pad" id="pad"></div>
+  </div>
+</div>
+
+<!-- ===== CONFIRM ===== -->
+<div class="screen" id="scr-confirm">
+  <div class="cf-badge" id="cf-badge"></div>
+  <div class="cf-name" id="cf-name"></div>
+  <div class="cf-time" id="cf-time"></div>
+  <div class="cf-sub" id="cf-sub"></div>
+  <div class="cf-bar" id="cf-bar"></div>
+</div>
+
+<!-- ===== MANAGER ===== -->
+<div class="screen" id="scr-mgr">
+  <div class="mhead"><h2>Manager</h2><button class="btn sm ghost" id="mgr-done">Done</button></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="mbody" id="mbody"></div>
+</div>
+
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ==========================================================
+   Matari Coffee Co. — Time Clock
+   All data lives on this iPad (localStorage). No server.
+   ========================================================== */
+const KEY = "matari_punch_v1";
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+let S = null, pin = "", confirmTimer = null, pendingPunch = null;
+
+function defaults(){
+  return { v:1, setup:false, managerPin:null, shopName:"Matari Coffee Co.",
+    employees:[], shifts:[], reports:[],
+    settings:{ email:"", weekStart:1, autoEmail:false, w3key:"",
+               autoReturn:5000, otHours:40, forceHours:12 } };
+}
+function load(){
+  try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch(e){ S = defaults(); }
+  const d = defaults();
+  S = Object.assign(d, S);
+  S.settings = Object.assign(d.settings, S.settings || {});
+  ["employees","shifts","reports"].forEach(k => { if(!Array.isArray(S[k])) S[k] = []; });
+}
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast("Storage full — export a backup"); }
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+/* ---------- time ---------- */
+const pad2 = n => String(n).padStart(2,"0");
+function fmtT(d){ let h=d.getHours(), m=d.getMinutes(); const ap=h<12?"AM":"PM"; h=h%12||12; return h+":"+pad2(m)+" "+ap; }
+function fmtD(d){ return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}); }
+function fmtDLong(d){ return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}); }
+function hm(h){ if(!h) return "0h 00m"; const t=Math.round(h*60); return Math.floor(t/60)+"h "+pad2(t%60)+"m"; }
+function dec(h){ return (Math.round(h*100)/100).toFixed(2); }
+function ymd(d){ return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+function dayStart(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function weekStartOf(d){
+  const x = dayStart(d);
+  x.setDate(x.getDate() - ((x.getDay() - S.settings.weekStart + 7) % 7));
+  return x;
+}
+/* a shift belongs to the week it STARTED in — a Sun 4pm → Mon 12:30am
+   close counts toward Sunday's week, not the new one. */
+const weekOfShift = s => ymd(weekStartOf(new Date(s.in)));
+/* true when a shift clocked out on a later calendar day than it started */
+const crossesMidnight = s => !!s.out &&
+  dayStart(new Date(s.out)).getTime() !== dayStart(new Date(s.in)).getTime();
+function toLocalInput(iso){
+  const d = new Date(iso);
+  return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+"T"+pad2(d.getHours())+":"+pad2(d.getMinutes());
+}
+
+/* ---------- shifts ---------- */
+const empById = id => S.employees.find(e => e.id === id);
+const openShiftFor = id => S.shifts.find(s => s.empId === id && !s.out);
+function shiftHours(s){ return s.out ? Math.max(0,(new Date(s.out)-new Date(s.in))/3600000) : 0; }
+function shiftsIn(from,to){
+  return S.shifts.filter(s => { const t=new Date(s.in); return t>=from && t<to; })
+                 .sort((a,b) => new Date(a.in)-new Date(b.in));
+}
+function hoursToday(empId){
+  const a = dayStart(new Date());
+  return shiftsIn(a, addDays(a,1)).filter(s => s.empId===empId).reduce((n,s)=>n+shiftHours(s),0);
+}
+
+function show(id){
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("on"));
+  document.getElementById(id).classList.add("on");
+}
+function toast(msg,ms){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove("on"), ms||2600);
+}
+
+/* ==========================================================
+   CLOCK SCREEN
+   ========================================================== */
+function tick(){
+  const n = new Date(), h = n.getHours()%12 || 12;
+  document.getElementById("liveclock").innerHTML =
+    h+":"+pad2(n.getMinutes())+'<span class="ampm">'+(n.getHours()<12?"AM":"PM")+"</span>";
+  document.getElementById("livedate").textContent =
+    n.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});
+}
+function renderChips(){
+  const open = S.shifts.filter(s => !s.out);
+  const box = document.getElementById("chips");
+  if(!open.length){ box.innerHTML = '<div class="none">Nobody is clocked in right now.</div>'; return; }
+  box.innerHTML = open.map(s => {
+    const e = empById(s.empId); if(!e) return "";
+    return '<div class="chip"><b>'+esc(e.name)+'</b><span>'+fmtT(new Date(s.in))+"</span></div>";
+  }).join("");
+}
+function buildPad(){
+  const keys = ["1","2","3","4","5","6","7","8","9","clear","0","del"];
+  document.getElementById("pad").innerHTML = keys.map(k =>
+    k==="clear" ? '<button class="key util" data-k="clear">Clear</button>' :
+    k==="del"   ? '<button class="key util" data-k="del">&#9003;</button>' :
+                  '<button class="key" data-k="'+k+'">'+k+"</button>").join("");
+}
+function renderDots(){
+  document.getElementById("dots").innerHTML =
+    [0,1,2,3].map(i => '<div class="dot'+(i<pin.length?" f":"")+'"></div>').join("");
+}
+function setPrompt(html,color){
+  const p = document.getElementById("prompt");
+  p.innerHTML = html; p.style.color = color || "";
+}
+function keyPress(k){
+  if(k==="clear"){ pin=""; return renderDots(); }
+  if(k==="del"){ pin=pin.slice(0,-1); return renderDots(); }
+  if(pin.length>=4) return;
+  pin += k; renderDots();
+  if(pin.length===4) setTimeout(submitPin,130);
+}
+function submitPin(){
+  const code = pin; pin=""; renderDots();
+  const emp = S.employees.find(e => e.pin===code && e.active!==false);
+  if(!emp){
+    setPrompt("Code not recognized — try again","var(--bad)");
+    setTimeout(()=>setPrompt("Enter your 4-digit code"),2200);
+    return;
+  }
+  doPunch(emp);
+}
+function lastPunchOut(empId){
+  const done = S.shifts.filter(s => s.empId===empId && s.out);
+  if(!done.length) return null;
+  return new Date(Math.max.apply(null, done.map(s => new Date(s.out).getTime())));
+}
+function doPunch(emp){
+  const now = new Date(), open = openShiftFor(emp.id);
+  const last = open ? new Date(open.in) : lastPunchOut(emp.id);
+
+  /* guard: a double tap shouldn't clock someone straight back out */
+  if(last && (now-last) < 90000 && pendingPunch !== emp.id){
+    pendingPunch = emp.id;
+    setPrompt("You just clocked "+(open?"in":"out")+" at "+fmtT(last)+
+      ".<br>Enter your code again to clock "+(open?"out":"in")+".","var(--gold)");
+    setTimeout(()=>{ if(pendingPunch===emp.id){ pendingPunch=null; setPrompt("Enter your 4-digit code"); } },12000);
+    return;
+  }
+  pendingPunch = null;
+  setPrompt("Enter your 4-digit code");
+
+  let action, shift;
+  if(open){ open.out = now.toISOString(); action="out"; shift=open; }
+  else { shift = { id:uid(), empId:emp.id, in:now.toISOString(), out:null, note:"" };
+         S.shifts.push(shift); action="in"; }
+  save(); renderChips();
+  showConfirm(emp,action,shift,now);
+
+  /* the closer punching out is what releases last week's report */
+  if(action==="out") setTimeout(runWeeklyCheck,600);
+}
+function showConfirm(emp,action,shift,now){
+  const sc = document.getElementById("scr-confirm");
+  sc.className = "screen on "+action;
+  document.getElementById("cf-badge").textContent = action==="in" ? "Clocked In" : "Clocked Out";
+  document.getElementById("cf-name").textContent = emp.name;
+  document.getElementById("cf-time").textContent = fmtT(now);
+
+  let sub = "Have a good shift.";
+  if(action==="out"){
+    const wk = weekStartOf(new Date(shift.in));
+    const wh = shiftsIn(wk, addDays(wk,7)).filter(s => s.empId===emp.id)
+                 .reduce((n,s)=>n+shiftHours(s),0);
+    sub = "This shift <b>"+hm(shiftHours(shift))+"</b><br>Today <b>"+hm(hoursToday(emp.id))+
+          "</b><br>This week <b>"+hm(wh)+"</b>";
+  }
+  document.getElementById("cf-sub").innerHTML = sub;
+
+  const bar = document.getElementById("cf-bar");
+  bar.style.setProperty("--dur", S.settings.autoReturn+"ms");
+  bar.style.animation="none"; void bar.offsetWidth; bar.style.animation="";
+
+  document.querySelectorAll(".screen").forEach(s => { if(s!==sc) s.classList.remove("on"); });
+  clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(backToClock, S.settings.autoReturn);
+}
+function backToClock(){
+  clearTimeout(confirmTimer);
+  document.getElementById("scr-confirm").className = "screen";
+  pin=""; renderDots(); renderChips(); renderBanner(); show("scr-clock");
+}
+
+/* ==========================================================
+   WEEKLY REPORTS
+   ========================================================== */
+function weekReport(w){
+  const from = new Date(w+"T00:00:00"), to = addDays(from,7);
+  const byEmp = {};
+  shiftsIn(from,to).forEach(s => { (byEmp[s.empId] = byEmp[s.empId]||[]).push(s); });
+  const people = Object.keys(byEmp).map(id => {
+    const e = empById(id), list = byEmp[id];
+    return { name: e ? e.name : "(removed employee)", list,
+             total: list.reduce((n,s)=>n+shiftHours(s),0),
+             open: list.filter(s=>!s.out).length };
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+  return { week:w, from, to, people,
+           grand: people.reduce((n,p)=>n+p.total,0),
+           label: "Week of "+fmtDLong(from)+" – "+fmtDLong(addDays(to,-1)) };
+}
+function reportText(r){
+  let t = S.shopName+" — Weekly Hours\n"+r.label+"\n"+"=".repeat(48)+"\n\n";
+  if(!r.people.length) return t+"No shifts recorded this week.\n";
+  r.people.forEach(p => {
+    t += p.name+"\n";
+    p.list.forEach(s => {
+      const i = new Date(s.in);
+      t += "  "+fmtD(i).padEnd(14)+fmtT(i).padStart(8)+"  -  "+
+           (s.out ? fmtT(new Date(s.out)).padStart(8) : " MISSING")+
+           (crossesMidnight(s) ? " (next day)" : "          ")+
+           "  "+(s.out ? hm(shiftHours(s)) : "—")+(s.edited?"  (edited)":"")+"\n";
+    });
+    t += "  "+("TOTAL  "+hm(p.total)+"  ("+dec(p.total)+" hrs)").padStart(48)+"\n";
+    if(p.open) t += "  ** "+p.open+" shift(s) with no clock-out — needs a fix **\n";
+    if(p.total > S.settings.otHours) t += "  ** over "+S.settings.otHours+" hrs **\n";
+    t += "\n";
+  });
+  t += "-".repeat(48)+"\nPAYROLL TOTAL: "+hm(r.grand)+"  ("+dec(r.grand)+" hrs)\n\n";
+  return t + "CSV\n" + reportCsv(r);
+}
+const csvCell = v => { v = String(v==null?"":v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
+function reportCsv(r){
+  /* "Ended" carries the clock-out calendar date so a Sunday close that runs
+     past midnight is unambiguous for whoever runs payroll. */
+  const out = [["Employee","Date","Clock In","Clock Out","Ended","Hours","Note"].join(",")];
+  r.people.forEach(p => p.list.forEach(s => {
+    const i = new Date(s.in);
+    out.push([p.name, ymd(i), fmtT(i),
+              s.out ? fmtT(new Date(s.out)) : "MISSING",
+              s.out ? ymd(new Date(s.out)) : "",
+              s.out ? dec(shiftHours(s)) : "", s.note||""].map(csvCell).join(","));
+  }));
+  r.people.forEach(p => out.push([p.name,"","","","TOTAL",dec(p.total),""].map(csvCell).join(",")));
+  return out.join("\n");
+}
+async function sendEmail(subject,body){
+  const key = (S.settings.w3key||"").trim();
+  if(!key) throw new Error("No email key set");
+  const res = await fetch("https://api.web3forms.com/submit",{
+    method:"POST", headers:{ "Content-Type":"application/json", Accept:"application/json" },
+    body: JSON.stringify({ access_key:key, subject, from_name:S.shopName+" Time Clock",
+                           email:S.settings.email||"noreply@example.com", message:body })
+  });
+  const j = await res.json().catch(()=>({}));
+  if(!res.ok || !j.success) throw new Error(j.message || ("HTTP "+res.status));
+  return true;
+}
+function mailtoFor(r){
+  return "mailto:"+encodeURIComponent(S.settings.email||"")+
+    "?subject="+encodeURIComponent(S.shopName+" hours — "+r.label)+
+    "&body="+encodeURIComponent(reportText(r).slice(0,1800));
+}
+
+/* A finished week is READY only once nobody from that week is still on the
+   clock. Matari closes Sunday at midnight, so the closer's punch-out lands
+   early Monday — that punch is what releases the report. If somebody forgets
+   to punch out entirely, send anyway after forceHours so it never gets stuck. */
+function weekReady(w){
+  const now = new Date(), end = addDays(new Date(w+"T00:00:00"),7);
+  if(now < end) return false;
+  const stillOpen = S.shifts.some(s => !s.out && weekOfShift(s)===w);
+  if(!stillOpen) return true;
+  return (now-end)/3600000 >= S.settings.forceHours;
+}
+function dueWeeks(){
+  const thisWk = ymd(weekStartOf(new Date())), seen = {};
+  S.shifts.forEach(s => { seen[weekOfShift(s)] = 1; });
+  return Object.keys(seen)
+    .filter(w => w < thisWk)
+    .filter(w => !S.reports.some(r => r.week===w && r.status==="sent"))
+    .filter(weekReady)
+    .sort();
+}
+async function runWeeklyCheck(){
+  const due = dueWeeks();
+  if(!due.length) return;
+  for(const w of due){
+    let rec = S.reports.find(r => r.week===w);
+    if(!rec){ rec = { week:w, status:"pending", sentAt:null, error:null }; S.reports.push(rec); }
+    if(S.settings.autoEmail && S.settings.w3key && S.settings.email){
+      const r = weekReport(w);
+      try {
+        await sendEmail(S.shopName+" hours — "+r.label, reportText(r));
+        rec.status="sent"; rec.sentAt=new Date().toISOString(); rec.error=null; rec.total=dec(r.grand);
+      } catch(e){ rec.status="pending"; rec.error=String(e.message||e); }
+    }
+  }
+  save(); renderBanner();
+}
+function renderBanner(){
+  const slot = document.getElementById("banner-slot");
+  const pending = S.reports.filter(r => r.status!=="sent");
+  if(!pending.length){ slot.innerHTML=""; return; }
+  const r = weekReport(pending[0].week);
+  slot.innerHTML = '<button class="banner" id="bn"><span>&#9993;</span><span>Weekly hours ready &middot; '+
+    hm(r.grand)+'</span><span class="arrow">&rsaquo;</span></button>';
+  document.getElementById("bn").onclick = () => askPin(()=>openMgr("reports"));
+}
+
+/* ==========================================================
+   MANAGER
+   ========================================================== */
+let mgrTab = "staff", tsWeek = null;
+const TABS = [["staff","Staff"],["time","Timesheet"],["reports","Reports"],["set","Settings"]];
+
+function askPin(onOk){
+  openModal('<h3>Manager code</h3><label class="fld">'+
+    '<input id="pp" type="tel" inputmode="numeric" maxlength="4" placeholder="••••" '+
+    'style="text-align:center;font-size:26px;letter-spacing:.4em"></label>'+
+    '<div class="acts"><button class="btn ghost" data-x>Cancel</button>'+
+    '<button class="btn" id="ppgo">Open</button></div>');
+  const f = document.getElementById("pp");
+  setTimeout(()=>f.focus(),120);
+  const go = () => {
+    if(f.value === S.managerPin){ closeModal(); onOk(); }
+    else { f.value=""; f.placeholder="Wrong code"; f.style.borderColor="var(--bad)"; }
+  };
+  document.getElementById("ppgo").onclick = go;
+  f.onkeydown = e => { if(e.key==="Enter") go(); };
+  f.oninput = () => { if(f.value.length===4) setTimeout(go,120); };
+}
+function openMgr(tab){ mgrTab = tab||"staff"; show("scr-mgr"); renderMgr(); }
+function renderMgr(){
+  document.getElementById("tabs").innerHTML = TABS.map(t =>
+    '<button class="tab'+(mgrTab===t[0]?" on":"")+'" data-tab="'+t[0]+'">'+t[1]+"</button>").join("");
+  const b = document.getElementById("mbody");
+  b.innerHTML = mgrTab==="staff" ? viewStaff()
+              : mgrTab==="time"  ? viewTime()
+              : mgrTab==="reports" ? viewReports()
+              : viewSettings();
+}
+
+/* ---- staff ---- */
+function viewStaff(){
+  let h = '<div class="card"><h3>Staff</h3>';
+  if(!S.employees.length){
+    h += '<div class="empty">No one added yet.<br>Add your first team member below.</div>';
+  } else {
+    h += S.employees.map(e => {
+      const o = openShiftFor(e.id);
+      const stat = e.active===false ? '<span class="pill out">Inactive</span>'
+        : o ? '<span class="pill in">In since '+fmtT(new Date(o.in))+"</span>"
+            : '<span class="pill out">Out</span>';
+      return '<div class="row"><div class="grow"><div class="nm">'+esc(e.name)+"</div>"+
+        '<div class="sub">Code <span class="code">'+esc(e.pin)+"</span> &middot; "+
+        hm(hoursToday(e.id))+" today</div></div>"+stat+
+        '<button class="btn sm ghost" data-emp="'+e.id+'">Edit</button></div>';
+    }).join("");
+  }
+  return h + '<button class="btn wide" data-newemp style="margin-top:14px">+ Add team member</button></div>';
+}
+function editEmp(id){
+  const e = id ? empById(id) : { id:null, name:"", pin:"", active:true };
+  const o = id ? openShiftFor(id) : null;
+  openModal("<h3>"+(id?"Edit":"Add")+" team member</h3>"+
+    '<label class="fld"><span>Name</span><input id="e-name" value="'+esc(e.name)+
+      '" placeholder="First name" autocapitalize="words"></label>'+
+    '<label class="fld"><span>4-digit code</span><div style="display:flex;gap:8px">'+
+      '<input id="e-pin" type="tel" inputmode="numeric" maxlength="4" value="'+esc(e.pin)+
+      '" placeholder="e.g. 4821" style="flex:1">'+
+      '<button class="btn sm ghost" id="e-sug" type="button" style="white-space:nowrap">Suggest</button></div>'+
+      '<div class="hint">You pick this — they type it to punch in and out. Must be unique.</div></label>'+
+    (id ? '<label class="fld"><span>Status</span><select id="e-act">'+
+      '<option value="1"'+(e.active!==false?" selected":"")+'>Active</option>'+
+      '<option value="0"'+(e.active===false?" selected":"")+'>Inactive — code stops working</option>'+
+      "</select></label>" : "")+
+    (o ? '<div class="card" style="background:rgba(159,197,61,.12);margin-bottom:14px">Clocked in since '+
+      fmtT(new Date(o.in))+'. <button class="btn sm" id="e-out" style="margin-top:10px">Clock out now</button></div>' : "")+
+    '<div class="acts"><button class="btn ghost" data-x>Cancel</button>'+
+    '<button class="btn" id="e-save">Save</button></div>'+
+    (id ? '<button class="btn wide danger" id="e-del" style="margin-top:12px">Remove '+esc(e.name)+"</button>"+
+          '<div class="hint" style="text-align:center">Their past hours stay in the timesheets.</div>' : ""));
+
+  if(o) document.getElementById("e-out").onclick = () => {
+    o.out = new Date().toISOString(); o.edited = true; save();
+    closeModal(); renderMgr(); toast(e.name+" clocked out"); runWeeklyCheck();
+  };
+  document.getElementById("e-sug").onclick = () => {
+    const taken = new Set(S.employees.map(x => x.pin).concat([S.managerPin]));
+    let c = null;
+    for(let i = 0; i < 500 && c === null; i++){
+      const t = String(Math.floor(1000 + Math.random() * 9000));
+      if(!taken.has(t)) c = t;
+    }
+    if(c) document.getElementById("e-pin").value = c;
+    else toast("Couldn't find a free code");
+  };
+  document.getElementById("e-save").onclick = () => {
+    const name = document.getElementById("e-name").value.trim();
+    const p = document.getElementById("e-pin").value.trim();
+    if(!name) return toast("Name is required");
+    if(!/^\d{4}$/.test(p)) return toast("Code must be exactly 4 digits");
+    if(S.employees.some(x => x.pin===p && x.id!==e.id)) return toast("Another person already uses that code");
+    if(p === S.managerPin) return toast("That's the manager code — pick another");
+    if(id){
+      e.name=name; e.pin=p;
+      const sel = document.getElementById("e-act");
+      if(sel) e.active = sel.value==="1";
+    } else {
+      S.employees.push({ id:uid(), name, pin:p, active:true, addedAt:new Date().toISOString() });
+    }
+    save(); closeModal(); renderMgr(); renderChips(); toast(id?"Saved":name+" added");
+  };
+  const del = document.getElementById("e-del");
+  if(del) del.onclick = () => {
+    if(!confirm("Remove "+e.name+"? Their recorded hours stay in the timesheets.")) return;
+    S.employees = S.employees.filter(x => x.id!==id);
+    save(); closeModal(); renderMgr(); renderChips(); toast("Removed");
+  };
+}
+
+/* ---- timesheet ---- */
+function viewTime(){
+  if(!tsWeek) tsWeek = ymd(weekStartOf(new Date()));
+  const r = weekReport(tsWeek);
+  const isThis = tsWeek === ymd(weekStartOf(new Date()));
+  let h = '<div class="wknav"><button data-wk="-1">&lsaquo;</button><div class="lbl">'+
+    (isThis ? "This week" : "Week of "+fmtDLong(r.from))+
+    '<div style="font-size:12px;color:var(--muted);font-weight:400">'+
+    fmtDLong(r.from)+" – "+fmtDLong(addDays(r.to,-1))+"</div></div>"+
+    '<button data-wk="1"'+(isThis?" disabled":"")+">&rsaquo;</button></div>";
+
+  if(!r.people.length){
+    h += '<div class="card"><div class="empty">No shifts this week.</div></div>';
+  } else {
+    r.people.forEach(p => {
+      h += '<div class="card"><h3>'+esc(p.name)+
+        (p.total > S.settings.otHours ? ' <span class="pill warn">Over '+S.settings.otHours+"h</span>" : "")+
+        '</h3><table class="ts"><tr><th>Date</th><th>In</th><th>Out</th><th class="r">Hours</th><th class="r"></th></tr>';
+      p.list.forEach(s => {
+        const i = new Date(s.in);
+        h += "<tr><td>"+fmtD(i)+"</td><td>"+fmtT(i)+"</td><td>"+
+          (s.out ? fmtT(new Date(s.out)) + (crossesMidnight(s) ? '<span class="nd">next day</span>' : "")
+                 : '<span class="pill bad">missing</span>')+
+          '</td><td class="r">'+(s.out?hm(shiftHours(s)):"—")+'</td><td class="r">'+
+          '<button class="btn sm ghost" data-sh="'+s.id+'">Edit</button></td></tr>';
+      });
+      h += '</table><div class="tot"><span class="n">Total</span><span class="v">'+hm(p.total)+
+        ' <small style="font-size:14px;color:var(--muted)">('+dec(p.total)+")</small></span></div></div>";
+    });
+    h += '<div class="card"><div class="tot" style="margin-top:0;border-top:0;padding-top:0">'+
+      '<span class="n">Payroll total</span><span class="v">'+hm(r.grand)+"</span></div></div>";
+  }
+  return h + '<button class="btn wide ghost" data-addsh>+ Add a missed shift</button>'+
+    '<button class="btn wide ghost" data-csv>View / export CSV</button>'+
+    '<button class="btn wide" data-emailwk>Email this week to manager</button>';
+}
+function editShift(id){
+  const s = S.shifts.find(x => x.id===id); if(!s) return;
+  const e = empById(s.empId);
+  openModal("<h3>"+esc(e?e.name:"Shift")+"</h3>"+
+    '<label class="fld"><span>Clocked in</span><input id="s-in" type="datetime-local" value="'+toLocalInput(s.in)+'"></label>'+
+    '<label class="fld"><span>Clocked out</span><input id="s-out" type="datetime-local" value="'+(s.out?toLocalInput(s.out):"")+'">'+
+      '<div class="hint">Leave blank if they are still on the clock.</div></label>'+
+    '<label class="fld"><span>Note (optional)</span><input id="s-note" value="'+esc(s.note||"")+
+      '" placeholder="e.g. forgot to punch out"></label>'+
+    '<div class="acts"><button class="btn ghost" data-x>Cancel</button>'+
+    '<button class="btn" id="s-save">Save</button></div>'+
+    '<button class="btn wide danger" id="s-del" style="margin-top:12px">Delete this shift</button>');
+  document.getElementById("s-save").onclick = () => {
+    const i = document.getElementById("s-in").value, o = document.getElementById("s-out").value;
+    if(!i) return toast("Clock-in time is required");
+    if(o && new Date(o) <= new Date(i)) return toast("Clock-out must be after clock-in");
+    s.in = new Date(i).toISOString();
+    s.out = o ? new Date(o).toISOString() : null;
+    s.note = document.getElementById("s-note").value.trim();
+    s.edited = true; save(); closeModal(); renderMgr(); renderChips();
+    toast("Shift updated"); runWeeklyCheck();
+  };
+  document.getElementById("s-del").onclick = () => {
+    if(!confirm("Delete this shift? This cannot be undone.")) return;
+    S.shifts = S.shifts.filter(x => x.id!==id);
+    save(); closeModal(); renderMgr(); renderChips(); toast("Shift deleted");
+  };
+}
+function addShift(){
+  if(!S.employees.length) return toast("Add a team member first");
+  const a = new Date(); a.setHours(9,0,0,0);
+  const b = new Date(); b.setHours(17,0,0,0);
+  openModal('<h3>Add a missed shift</h3><label class="fld"><span>Who</span><select id="a-emp">'+
+    S.employees.map(e => '<option value="'+e.id+'">'+esc(e.name)+"</option>").join("")+"</select></label>"+
+    '<label class="fld"><span>Clocked in</span><input id="a-in" type="datetime-local" value="'+toLocalInput(a)+'"></label>'+
+    '<label class="fld"><span>Clocked out</span><input id="a-out" type="datetime-local" value="'+toLocalInput(b)+'"></label>'+
+    '<label class="fld"><span>Note</span><input id="a-note" value="Added by manager"></label>'+
+    '<div class="acts"><button class="btn ghost" data-x>Cancel</button>'+
+    '<button class="btn" id="a-save">Add shift</button></div>');
+  document.getElementById("a-save").onclick = () => {
+    const i = document.getElementById("a-in").value, o = document.getElementById("a-out").value;
+    if(!i || !o) return toast("Both times are required");
+    if(new Date(o) <= new Date(i)) return toast("Clock-out must be after clock-in");
+    S.shifts.push({ id:uid(), empId:document.getElementById("a-emp").value,
+      in:new Date(i).toISOString(), out:new Date(o).toISOString(),
+      note:document.getElementById("a-note").value.trim(), edited:true });
+    save(); closeModal(); renderMgr(); toast("Shift added");
+  };
+}
+
+/* ---- reports ---- */
+function viewReports(){
+  const weeks = {};
+  S.shifts.forEach(s => { weeks[weekOfShift(s)] = 1; });
+  S.reports.forEach(r => { weeks[r.week] = 1; });
+  const list = Object.keys(weeks).sort().reverse();
+  const thisWk = ymd(weekStartOf(new Date()));
+  const auto = S.settings.autoEmail && S.settings.w3key && S.settings.email;
+
+  let h = '<div class="card"><h3>Weekly reports</h3><div class="hint" style="margin:0 0 8px">'+
+    (auto ? "Sending automatically to <b>"+esc(S.settings.email)+
+            "</b> as soon as the last person from that week punches out."
+          : "Automatic sending is off — reports wait here for you. Turn it on in Settings.")+"</div>";
+
+  if(!list.length) h += '<div class="empty">No weeks recorded yet.</div>';
+  list.forEach(w => {
+    const r = weekReport(w), rec = S.reports.find(x => x.week===w);
+    const openNow = S.shifts.some(s => !s.out && weekOfShift(s)===w);
+    const st = w===thisWk ? '<span class="pill warn">In progress</span>'
+      : rec && rec.status==="sent" ? '<span class="pill in">Sent</span>'
+      : openNow ? '<span class="pill warn">Waiting on punch-out</span>'
+      : '<span class="pill bad">Not sent</span>';
+    h += '<div class="row"><div class="grow"><div class="nm">'+fmtDLong(r.from)+"</div>"+
+      '<div class="sub">'+hm(r.grand)+" &middot; "+r.people.length+" staff"+
+      (rec && rec.error ? " &middot; "+esc(rec.error) : "")+"</div></div>"+st+
+      '<button class="btn sm ghost" data-rv="'+w+'">Open</button></div>';
+  });
+  return h + "</div>";
+}
+function openReport(w){
+  const r = weekReport(w), rec = S.reports.find(x => x.week===w);
+  openModal("<h3>"+r.label+"</h3><div style='margin-bottom:14px;font-size:15px'>Payroll total <b>"+
+    hm(r.grand)+"</b> ("+dec(r.grand)+" hrs)</div>"+
+    '<textarea id="txtArea" readonly>'+esc(reportText(r))+"</textarea>"+
+    '<button class="btn wide" id="r-send">Email to '+esc(S.settings.email||"manager")+"</button>"+
+    '<button class="btn wide ghost" id="r-mail">Open in Mail app instead</button>'+
+    '<button class="btn wide ghost" id="r-mark">'+
+      (rec && rec.status==="sent" ? "Mark as not sent" : "Mark as sent")+"</button>"+
+    '<div class="acts" style="margin-top:14px"><button class="btn ghost" data-x>Close</button></div>');
+
+  document.getElementById("r-send").onclick = async ev => {
+    const b = ev.currentTarget;
+    if(!S.settings.w3key) return toast("Add an email key in Settings first");
+    b.disabled = true; b.textContent = "Sending…";
+    try {
+      await sendEmail(S.shopName+" hours — "+r.label, reportText(r));
+      let rr = S.reports.find(x => x.week===w);
+      if(!rr){ rr={week:w}; S.reports.push(rr); }
+      rr.status="sent"; rr.sentAt=new Date().toISOString(); rr.error=null; rr.total=dec(r.grand);
+      save(); closeModal(); renderMgr(); renderBanner(); toast("Report emailed");
+    } catch(e){
+      b.disabled=false; b.textContent="Try again";
+      toast("Could not send: "+(e.message||e),4500);
+    }
+  };
+  document.getElementById("r-mail").onclick = () => { location.href = mailtoFor(r); };
+  document.getElementById("r-mark").onclick = () => {
+    let rr = S.reports.find(x => x.week===w);
+    if(!rr){ rr={week:w}; S.reports.push(rr); }
+    rr.status = rr.status==="sent" ? "pending" : "sent";
+    rr.sentAt = rr.status==="sent" ? new Date().toISOString() : null;
+    save(); closeModal(); renderMgr(); renderBanner();
+  };
+}
+
+/* ---- settings ---- */
+function viewSettings(){
+  const s = S.settings;
+  return '<div class="card"><h3>Weekly report email</h3>'+
+    '<label class="fld"><span>Manager email</span><input id="st-email" type="email" inputmode="email" '+
+      'autocapitalize="off" value="'+esc(s.email)+'"></label>'+
+    '<label class="fld"><span>Send automatically</span><select id="st-auto">'+
+      '<option value="0"'+(!s.autoEmail?" selected":"")+">Off — I'll send it myself</option>"+
+      '<option value="1"'+(s.autoEmail?" selected":"")+">On — email it when the week wraps</option></select>"+
+      '<div class="hint">The report goes out as soon as the last person from that week punches out — '+
+      'so your Sunday closer punching out after midnight is what sends it. If someone forgets to punch '+
+      'out, it sends anyway '+s.forceHours+' hours later with that shift flagged.</div></label>'+
+    '<label class="fld"><span>Web3Forms access key</span><input id="st-key" value="'+esc(s.w3key)+
+      '" placeholder="paste key here" autocapitalize="off">'+
+      '<div class="hint">Free, no account needed: go to <b>web3forms.com</b>, enter the manager email, '+
+      'and they email you an access key. Paste it here. Leave blank to send reports by hand.</div></label>'+
+    '<button class="btn wide ghost" id="st-test">Send a test email</button></div>'+
+
+    '<div class="card"><h3>Shop</h3>'+
+    '<label class="fld"><span>Shop name</span><input id="st-shop" value="'+esc(S.shopName)+'"></label>'+
+    '<label class="fld"><span>Work week starts on</span><select id="st-ws">'+
+      DAYS.map((d,i)=>'<option value="'+i+'"'+(s.weekStart===i?" selected":"")+">"+d+"</option>").join("")+
+      '</select><div class="hint">A shift counts toward the day it <b>started</b>, so a Sunday close '+
+      'that ends after midnight stays in Sunday\'s week.</div></label>'+
+    '<label class="fld"><span>Flag overtime above</span>'+
+      '<input id="st-ot" type="number" min="1" max="99" value="'+s.otHours+'"><div class="hint">Hours per week.</div></label>'+
+    '<label class="fld"><span>Manager code</span><input id="st-pin" type="tel" inputmode="numeric" '+
+      'maxlength="4" value="'+esc(S.managerPin||"")+'"></label>'+
+    '<button class="btn wide" id="st-save">Save settings</button></div>'+
+
+    '<div class="card"><h3>Backup</h3><div class="hint" style="margin-bottom:12px">All hours are stored '+
+    'on this iPad only. Back up now and then — and always before clearing Safari data.</div>'+
+    '<button class="btn wide ghost" id="st-exp">Export backup</button>'+
+    '<button class="btn wide ghost" id="st-imp">Restore from backup</button></div>'+
+
+    '<div class="card"><h3>Danger zone</h3>'+
+    '<button class="btn wide danger" id="st-wipe">Erase everything</button></div>';
+}
+
+/* ==========================================================
+   MODAL + EVENTS
+   ========================================================== */
+function openModal(html){
+  document.getElementById("modal").innerHTML = html;
+  document.getElementById("mask").classList.add("on");
+}
+function closeModal(){ document.getElementById("mask").classList.remove("on"); }
+function download(name,text){
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text],{type:"text/plain"}));
+    a.download = name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  } catch(e){ toast("Select the text and copy it instead"); }
+}
+function showText(title,text,file){
+  openModal("<h3>"+esc(title)+'</h3><textarea id="txtArea" readonly>'+esc(text)+"</textarea>"+
+    '<div class="hint">Tap and hold to select all, then Copy.</div>'+
+    '<button class="btn wide" id="tx-dl">Download file</button>'+
+    '<div class="acts" style="margin-top:12px"><button class="btn ghost" data-x>Close</button></div>');
+  document.getElementById("tx-dl").onclick = () => download(file,text);
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-k],[data-tab],[data-emp],[data-newemp],[data-sh],[data-addsh],[data-csv],[data-emailwk],[data-wk],[data-rv],[data-x]");
+  if(!t) return;
+  const d = t.dataset;
+  if(d.k !== undefined) return keyPress(d.k);
+  if(d.x !== undefined) return closeModal();
+  if(d.tab){ mgrTab = d.tab; return renderMgr(); }
+  if(d.emp) return editEmp(d.emp);
+  if(d.newemp !== undefined) return editEmp(null);
+  if(d.sh) return editShift(d.sh);
+  if(d.addsh !== undefined) return addShift();
+  if(d.rv) return openReport(d.rv);
+  if(d.csv !== undefined){
+    const r = weekReport(tsWeek);
+    return showText("Matari hours "+ymd(r.from), reportCsv(r), "matari-hours-"+ymd(r.from)+".csv");
+  }
+  if(d.emailwk !== undefined) return openReport(tsWeek);
+  if(d.wk){ tsWeek = ymd(addDays(new Date(tsWeek+"T00:00:00"), 7*(+d.wk))); return renderMgr(); }
+});
+document.getElementById("mask").addEventListener("click", e => { if(e.target.id==="mask") closeModal(); });
+document.getElementById("scr-confirm").addEventListener("click", backToClock);
+document.getElementById("btn-gear").addEventListener("click", () => askPin(()=>openMgr("staff")));
+document.getElementById("mgr-done").addEventListener("click", backToClock);
+
+document.getElementById("mbody").addEventListener("click", e => {
+  const id = e.target.id;
+  if(id === "st-save"){
+    const p = document.getElementById("st-pin").value.trim();
+    if(!/^\d{4}$/.test(p)) return toast("Manager code must be 4 digits");
+    if(S.employees.some(x => x.pin===p)) return toast("A team member already uses that code");
+    S.managerPin = p;
+    S.shopName = document.getElementById("st-shop").value.trim() || "Matari Coffee Co.";
+    S.settings.weekStart = +document.getElementById("st-ws").value;
+    S.settings.otHours = Math.max(1, +document.getElementById("st-ot").value || 40);
+    S.settings.email = document.getElementById("st-email").value.trim();
+    S.settings.autoEmail = document.getElementById("st-auto").value === "1";
+    S.settings.w3key = document.getElementById("st-key").value.trim();
+    save(); renderMgr(); toast("Settings saved");
+  }
+  if(id === "st-test"){
+    S.settings.email = document.getElementById("st-email").value.trim();
+    S.settings.w3key = document.getElementById("st-key").value.trim();
+    save();
+    if(!S.settings.w3key) return toast("Paste an access key first");
+    e.target.disabled = true; e.target.textContent = "Sending…";
+    sendEmail(S.shopName+" time clock — test",
+      "This is a test from the "+S.shopName+" time clock. Weekly hour reports will arrive here.")
+      .then(()=>{ e.target.disabled=false; e.target.textContent="Send a test email";
+                  toast("Test sent — check your inbox",4000); })
+      .catch(err=>{ e.target.disabled=false; e.target.textContent="Send a test email";
+                    toast("Failed: "+(err.message||err),5000); });
+  }
+  if(id === "st-exp"){
+    const j = JSON.stringify(S,null,2);
+    showText("Backup", j, "matari-backup-"+ymd(new Date())+".json");
+  }
+  if(id === "st-imp"){
+    openModal('<h3>Restore from backup</h3><div class="hint" style="margin-bottom:10px">Paste a backup below. '+
+      'This replaces everything currently on this iPad.</div>'+
+      '<textarea id="txtArea" placeholder="Paste backup here"></textarea>'+
+      '<div class="acts" style="margin-top:14px"><button class="btn ghost" data-x>Cancel</button>'+
+      '<button class="btn danger" id="im-go">Restore</button></div>');
+    document.getElementById("im-go").onclick = () => {
+      try {
+        const o = JSON.parse(document.getElementById("txtArea").value);
+        if(!o || !Array.isArray(o.employees)) throw new Error("bad");
+        localStorage.setItem(KEY, JSON.stringify(o));
+        load(); closeModal(); renderMgr(); renderChips(); toast("Restored");
+      } catch(err){ toast("That doesn't look like a backup"); }
+    };
+  }
+  if(id === "st-wipe"){
+    if(!confirm("Erase all staff and all recorded hours? This cannot be undone.")) return;
+    if(!confirm("Really erase everything? Export a backup first if you might need it.")) return;
+    localStorage.removeItem(KEY); load(); boot(); toast("Erased");
+  }
+});
+
+/* ==========================================================
+   BOOT
+   ========================================================== */
+document.getElementById("su-go").addEventListener("click", () => {
+  const a = document.getElementById("su-pin").value.trim();
+  const b = document.getElementById("su-pin2").value.trim();
+  if(!/^\d{4}$/.test(a)) return toast("Manager code must be exactly 4 digits");
+  if(a !== b) return toast("The two codes don't match");
+  S.managerPin = a;
+  S.settings.email = document.getElementById("su-email").value.trim();
+  S.setup = true; save();
+  openMgr("staff"); toast("Now add your team",3500);
+});
+
+function boot(){
+  buildPad(); renderDots(); tick(); renderChips();
+  if(!S.setup || !S.managerPin) return show("scr-setup");
+  renderBanner(); show("scr-clock"); runWeeklyCheck();
+}
+load(); boot();
+setInterval(tick,1000);
+setInterval(renderChips,30000);
+setInterval(runWeeklyCheck,15*60*1000);
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden){ tick(); renderChips(); runWeeklyCheck(); }
+});
+
+/* keep the shop iPad awake */
+let wl = null;
+async function keepAwake(){
+  try { if("wakeLock" in navigator && !wl) wl = await navigator.wakeLock.request("screen"); } catch(e){}
+}
+keepAwake();
+document.addEventListener("visibilitychange", () => { if(!document.hidden){ wl=null; keepAwake(); } });
+
+/* no pinch / double-tap zoom on a counter iPad */
+document.addEventListener("gesturestart", e => e.preventDefault());
+let lastTap = 0;
+document.addEventListener("touchend", e => {
+  const n = Date.now();
+  if(n-lastTap < 320 && !e.target.closest("input,textarea,select")) e.preventDefault();
+  lastTap = n;
+}, { passive:false });
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
