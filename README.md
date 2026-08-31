@@ -4,7 +4,7 @@ Staff punch in and out on the shop iPad with a 4-digit code. Every punch is
 timestamped, saved on the iPad, and synced to a Google Sheet the manager can
 open from her phone.
 
-**Live app:** https://matari522.github.io/matari-clock/
+**Live app:** https://crewclock.github.io
 **Hours sheet:** https://docs.google.com/spreadsheets/d/12SOzoAS9ErtyPdvJNt25mSD6P7evewDMqCDE6O4tQXU/edit
 
 Everything below is already set up and tested. Nothing else is needed to start
@@ -15,7 +15,7 @@ using it.
 ## Put it on the iPad
 
 1. Open **Safari** on the iPad — it has to be Safari, not Chrome.
-2. Go to **matari522.github.io/matari-clock**
+2. Go to **crewclock.github.io**
 3. Tap the **Share** button (the square with the arrow, top of the screen).
 4. Scroll down the list and tap **Add to Home Screen**.
 5. It'll suggest the name *Matari Clock* — tap **Add**.
