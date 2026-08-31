@@ -10,8 +10,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Matari Clock">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
 <style>
 :root{
   --ink:#0C141C; --panel:#15212C; --panel2:#1E2C3A; --panel3:#26374A;
@@ -57,6 +57,11 @@ input,select,textarea{font:inherit}
 .chip b{font-weight:600}
 .chip span{color:var(--lime);font-variant-numeric:tabular-nums}
 .chips .none{color:var(--muted);font-size:14px;border:0;background:none;padding:0}
+.syncnote{color:var(--muted);font-size:12px;margin-top:9px;opacity:.75}
+.syncrow{display:flex;align-items:center;gap:9px;font-size:13px;margin-bottom:12px}
+.syncdot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.syncdot.ok{background:var(--lime)} .syncdot.warn{background:var(--out)}
+.syncdot.off{background:var(--panel3)}
 
 /* ---------- keypad ---------- */
 .prompt{text-align:center;color:var(--muted);font-size:15px;margin-bottom:14px;min-height:22px}
@@ -216,7 +221,8 @@ table.ts td.r,table.ts th.r{text-align:right;padding-right:0}
     <div class="wordmark">Matari<small>Coffee Co.</small></div>
     <div class="bigclock" id="liveclock">--:--</div>
     <div class="bigdate" id="livedate"></div>
-    <div class="onnow"><h4>On the clock</h4><div class="chips" id="chips"></div></div>
+    <div class="onnow"><h4>On the clock</h4><div class="chips" id="chips"></div>
+      <div class="syncnote" id="syncnote"></div></div>
   </div>
   <div class="right">
     <div id="banner-slot"></div>
@@ -258,14 +264,17 @@ let S = null, pin = "", confirmTimer = null, pendingPunch = null;
 function defaults(){
   return { v:1, setup:false, managerPin:null, shopName:"Matari Coffee Co.",
     employees:[], shifts:[], reports:[],
+    sync:{ lastOk:null, lastError:null, lastTry:null },
     settings:{ email:"", weekStart:1, autoEmail:false, w3key:"",
-               autoReturn:5000, otHours:40, forceHours:12 } };
+               autoReturn:5000, otHours:40, forceHours:12,
+               sheetUrl:"", sheetToken:"" } };
 }
 function load(){
   try { S = JSON.parse(localStorage.getItem(KEY)) || defaults(); } catch(e){ S = defaults(); }
   const d = defaults();
   S = Object.assign(d, S);
   S.settings = Object.assign(d.settings, S.settings || {});
+  S.sync = Object.assign(d.sync, S.sync || {});
   ["employees","shifts","reports"].forEach(k => { if(!Array.isArray(S[k])) S[k] = []; });
 }
 function save(){
@@ -400,9 +409,11 @@ function doPunch(emp){
   if(open){ open.out = now.toISOString(); action="out"; shift=open; }
   else { shift = { id:uid(), empId:emp.id, in:now.toISOString(), out:null, note:"" };
          S.shifts.push(shift); action="in"; }
+  shift.synced = false;
   save(); renderChips();
   showConfirm(emp,action,shift,now);
 
+  pushShift(shift);   // fire and forget; the retry loop covers a failure
   /* the closer punching out is what releases last week's report */
   if(action==="out") setTimeout(runWeeklyCheck,600);
 }
@@ -554,6 +565,137 @@ function renderBanner(){
 }
 
 /* ==========================================================
+   GOOGLE SHEET SYNC
+   The iPad always writes locally first — a punch is recorded whether or
+   not the wifi is up. The sheet is the durable copy and the manager's
+   window into the hours. Anything that fails to send is retried later.
+   ========================================================== */
+const sheetOn = () => !!(S.settings.sheetUrl || "").trim();
+const pendingCount = () => S.shifts.filter(s => !s.synced).length;
+
+function shiftRow(s){
+  const e = empById(s.empId), i = new Date(s.in);
+  return [ s.id, e ? e.name : "(removed employee)", weekOfShift(s), ymd(i), fmtT(i),
+           s.out ? fmtT(new Date(s.out)) : "", s.out ? ymd(new Date(s.out)) : "",
+           s.out ? Number(dec(shiftHours(s))) : "", s.note || "", s.edited ? "yes" : "",
+           new Date().toISOString(), s.empId, s.in, s.out || "" ];
+}
+const staffRows = () => S.employees.map(e =>
+  [e.id, e.name, e.pin, e.active === false ? "no" : "yes", e.addedAt || ""]);
+/* A deleted shift can't just vanish from the sheet — the row stays as an
+   audit trail, marked DELETED with zero hours so the Totals tab ignores it. */
+function voidRow(s){
+  const e = empById(s.empId), i = new Date(s.in);
+  return [ s.id, e ? e.name : "(removed employee)", weekOfShift(s), ymd(i), fmtT(i),
+           s.out ? fmtT(new Date(s.out)) : "", "", 0,
+           (s.note ? s.note + " — " : "") + "deleted by manager",
+           "DELETED", new Date().toISOString(), s.empId, s.in, s.out || "" ];
+}
+const configBlob = () => JSON.stringify({
+  shopName:S.shopName, managerPin:S.managerPin, settings:S.settings, reports:S.reports });
+
+async function sheetCall(payload){
+  const url = (S.settings.sheetUrl || "").trim();
+  if(!url) throw new Error("No sheet link saved");
+  /* text/plain keeps this a "simple" request. application/json would trigger
+     a CORS preflight, which Apps Script web apps do not answer. */
+  const res = await fetch(url, {
+    method:"POST",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify(Object.assign({ token:S.settings.sheetToken || "" }, payload)),
+    redirect:"follow"
+  });
+  let j;
+  try { j = await res.json(); }
+  catch(e){ throw new Error("The sheet did not reply properly — check the link"); }
+  if(!j.ok) throw new Error(j.error || "The sheet refused the update");
+  return j;
+}
+function syncOk(){
+  S.sync.lastOk = new Date().toISOString();
+  S.sync.lastError = null; S.sync.lastTry = S.sync.lastOk;
+}
+function syncFail(e){
+  S.sync.lastError = String(e.message || e);
+  S.sync.lastTry = new Date().toISOString();
+}
+
+/* one shift, right after somebody punches */
+async function pushShift(s){
+  if(!sheetOn()) return;
+  try { await sheetCall({ action:"upsert", punches:[shiftRow(s)] }); s.synced = true; syncOk(); }
+  catch(e){ s.synced = false; syncFail(e); }
+  save(); renderSyncNote();
+}
+/* everything — self-healing, so a single failed push repairs itself later */
+async function pushAll(force){
+  if(!sheetOn()) return;
+  if(!force && !pendingCount()) return;
+  try {
+    await sheetCall({ action:"sync", punches:S.shifts.map(shiftRow),
+                      staff:staffRows(), config:configBlob() });
+    S.shifts.forEach(s => { s.synced = true; });
+    syncOk();
+  } catch(e){ syncFail(e); }
+  save(); renderSyncNote();
+}
+async function pullFromSheet(){
+  const url = (S.settings.sheetUrl || "").trim();
+  if(!url) throw new Error("No sheet link saved");
+  const q = url + (url.indexOf("?") > -1 ? "&" : "?") + "action=snapshot" +
+            "&token=" + encodeURIComponent(S.settings.sheetToken || "");
+  const res = await fetch(q, { redirect:"follow" });
+  let j;
+  try { j = await res.json(); }
+  catch(e){ throw new Error("The sheet did not reply properly — check the link"); }
+  if(!j.ok) throw new Error(j.error || "Could not read the sheet");
+  return j;
+}
+/* rebuild this iPad from what the sheet holds */
+function applySnapshot(j){
+  const staff = (j.staff || []).map(r => ({
+    id:String(r[0]), name:String(r[1]),
+    pin:String(r[2]).replace(/\D/g,"").padStart(4,"0"),
+    active:String(r[3]).toLowerCase() !== "no",
+    addedAt:r[4] ? String(r[4]) : ""
+  })).filter(e => e.id && e.name);
+
+  const shifts = (j.punches || []).map(r => ({
+    id:String(r[0]), empId:String(r[11]),
+    in:String(r[12]), out:r[13] ? String(r[13]) : null,
+    note:r[8] ? String(r[8]) : "",
+    edited:String(r[9]).toLowerCase() === "yes",
+    synced:true
+  })).filter(s => s.id && s.in && !isNaN(new Date(s.in)));
+
+  if(!staff.length && !shifts.length) throw new Error("That sheet has no hours in it yet");
+
+  const keepUrl = S.settings.sheetUrl, keepTok = S.settings.sheetToken;
+  if(j.config){
+    try {
+      const c = JSON.parse(j.config);
+      if(c.shopName) S.shopName = c.shopName;
+      if(c.managerPin) S.managerPin = c.managerPin;
+      if(c.settings) S.settings = Object.assign(S.settings, c.settings);
+      if(Array.isArray(c.reports)) S.reports = c.reports;
+    } catch(e){ /* config is a nicety — hours matter more */ }
+  }
+  S.settings.sheetUrl = keepUrl; S.settings.sheetToken = keepTok;
+  S.employees = staff; S.shifts = shifts; S.setup = true;
+  save();
+  return { staff:staff.length, shifts:shifts.length };
+}
+
+/* a quiet line on the punch screen, only when something is actually waiting */
+function renderSyncNote(){
+  const el = document.getElementById("syncnote");
+  if(!el) return;
+  const n = pendingCount();
+  if(!sheetOn() || !n){ el.textContent = ""; return; }
+  el.textContent = n + (n === 1 ? " punch" : " punches") + " waiting to save to the sheet";
+}
+
+/* ==========================================================
    MANAGER
    ========================================================== */
 let mgrTab = "staff", tsWeek = null;
@@ -628,8 +770,9 @@ function editEmp(id){
           '<div class="hint" style="text-align:center">Their past hours stay in the timesheets.</div>' : ""));
 
   if(o) document.getElementById("e-out").onclick = () => {
-    o.out = new Date().toISOString(); o.edited = true; save();
-    closeModal(); renderMgr(); toast(e.name+" clocked out"); runWeeklyCheck();
+    o.out = new Date().toISOString(); o.edited = true; o.synced = false; save();
+    closeModal(); renderMgr(); toast(e.name+" clocked out");
+    pushShift(o); runWeeklyCheck();
   };
   document.getElementById("e-sug").onclick = () => {
     const taken = new Set(S.employees.map(x => x.pin).concat([S.managerPin]));
@@ -656,12 +799,14 @@ function editEmp(id){
       S.employees.push({ id:uid(), name, pin:p, active:true, addedAt:new Date().toISOString() });
     }
     save(); closeModal(); renderMgr(); renderChips(); toast(id?"Saved":name+" added");
+    pushAll(true);
   };
   const del = document.getElementById("e-del");
   if(del) del.onclick = () => {
     if(!confirm("Remove "+e.name+"? Their recorded hours stay in the timesheets.")) return;
     S.employees = S.employees.filter(x => x.id!==id);
     save(); closeModal(); renderMgr(); renderChips(); toast("Removed");
+    pushAll(true);
   };
 }
 
@@ -720,13 +865,17 @@ function editShift(id){
     s.in = new Date(i).toISOString();
     s.out = o ? new Date(o).toISOString() : null;
     s.note = document.getElementById("s-note").value.trim();
-    s.edited = true; save(); closeModal(); renderMgr(); renderChips();
-    toast("Shift updated"); runWeeklyCheck();
+    s.edited = true; s.synced = false;
+    save(); closeModal(); renderMgr(); renderChips();
+    pushShift(s); toast("Shift updated"); runWeeklyCheck();
   };
   document.getElementById("s-del").onclick = () => {
     if(!confirm("Delete this shift? This cannot be undone.")) return;
+    const gone = Object.assign({}, s);
     S.shifts = S.shifts.filter(x => x.id!==id);
     save(); closeModal(); renderMgr(); renderChips(); toast("Shift deleted");
+    if(sheetOn()) sheetCall({ action:"upsert", punches:[voidRow(gone)] })
+      .then(syncOk).catch(syncFail).then(() => { save(); renderSyncNote(); });
   };
 }
 function addShift(){
@@ -746,8 +895,9 @@ function addShift(){
     if(new Date(o) <= new Date(i)) return toast("Clock-out must be after clock-in");
     S.shifts.push({ id:uid(), empId:document.getElementById("a-emp").value,
       in:new Date(i).toISOString(), out:new Date(o).toISOString(),
-      note:document.getElementById("a-note").value.trim(), edited:true });
+      note:document.getElementById("a-note").value.trim(), edited:true, synced:false });
     save(); closeModal(); renderMgr(); toast("Shift added");
+    pushShift(S.shifts[S.shifts.length-1]);
   };
 }
 
@@ -819,7 +969,28 @@ function openReport(w){
 /* ---- settings ---- */
 function viewSettings(){
   const s = S.settings;
-  return '<div class="card"><h3>Weekly report email</h3>'+
+  const st = !sheetOn() ? ["off","Not connected \u2014 hours live only on this iPad"]
+    : S.sync.lastError ? ["warn","Last attempt failed: "+S.sync.lastError]
+    : S.sync.lastOk ? ["ok","Last saved "+new Date(S.sync.lastOk).toLocaleString()]
+    : ["off","Connected, nothing sent yet"];
+  const pend = pendingCount();
+  return '<div class="card"><h3>Google Sheet</h3>'+
+    '<div class="syncrow"><span class="syncdot '+st[0]+'"></span><span>'+esc(st[1])+
+      (pend ? " \u00b7 "+pend+" waiting" : "")+'</span></div>'+
+    '<label class="fld"><span>Web app link</span><input id="st-sheet" value="'+esc(s.sheetUrl)+
+      '" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off">'+
+      '<div class="hint">From <b>Deploy \u203a New deployment</b> in the sheet\'s Apps Script. '+
+      'Full steps are in the setup guide.</div></label>'+
+    '<label class="fld"><span>Sync word (optional)</span><input id="st-tok" value="'+esc(s.sheetToken)+
+      '" placeholder="leave blank if you skipped it" autocapitalize="off">'+
+      '<div class="hint">Only if you put a word in the script\'s TOKEN line. It must match exactly.</div></label>'+
+    '<button class="btn wide ghost" id="st-sheettest">Test connection</button>'+
+    '<button class="btn wide ghost" id="st-sheetpush">Send all hours to the sheet now</button>'+
+    '<button class="btn wide ghost" id="st-sheetpull">Restore this iPad from the sheet</button>'+
+    '<div class="hint" style="margin-top:10px">Punches always save on the iPad first, so the clock '+
+    'keeps working if the wifi drops. Anything that could not be sent goes up automatically later.</div></div>'+
+
+    '<div class="card"><h3>Weekly report email</h3>'+
     '<label class="fld"><span>Manager email</span><input id="st-email" type="email" inputmode="email" '+
       'autocapitalize="off" value="'+esc(s.email)+'"></label>'+
     '<label class="fld"><span>Send automatically</span><select id="st-auto">'+
@@ -916,7 +1087,12 @@ document.getElementById("mbody").addEventListener("click", e => {
     S.settings.email = document.getElementById("st-email").value.trim();
     S.settings.autoEmail = document.getElementById("st-auto").value === "1";
     S.settings.w3key = document.getElementById("st-key").value.trim();
+    const su = document.getElementById("st-sheet");
+    if(su) S.settings.sheetUrl = su.value.trim();
+    const stk = document.getElementById("st-tok");
+    if(stk) S.settings.sheetToken = stk.value.trim();
     save(); renderMgr(); toast("Settings saved");
+    if(sheetOn()) pushAll(true);
   }
   if(id === "st-test"){
     S.settings.email = document.getElementById("st-email").value.trim();
@@ -930,6 +1106,48 @@ document.getElementById("mbody").addEventListener("click", e => {
                   toast("Test sent — check your inbox",4000); })
       .catch(err=>{ e.target.disabled=false; e.target.textContent="Send a test email";
                     toast("Failed: "+(err.message||err),5000); });
+  }
+  if(id === "st-sheettest" || id === "st-sheetpush" || id === "st-sheetpull"){
+    S.settings.sheetUrl = document.getElementById("st-sheet").value.trim();
+    S.settings.sheetToken = document.getElementById("st-tok").value.trim();
+    save();
+    if(!sheetOn()) return toast("Paste the web app link first");
+    const btn = e.target, label = btn.textContent;
+    btn.disabled = true;
+
+    if(id === "st-sheettest"){
+      btn.textContent = "Checking\u2026";
+      sheetCall({ action:"ping" })
+        .then(j => { syncOk(); save(); renderMgr();
+                     toast("Connected to \u201c"+(j.sheet||"your sheet")+"\u201d", 4000); })
+        .catch(err => { syncFail(err); save(); renderMgr();
+                        toast("No luck: "+(err.message||err), 6000); });
+      return;
+    }
+    if(id === "st-sheetpush"){
+      btn.textContent = "Sending\u2026";
+      pushAll(true).then(() => { renderMgr();
+        toast(S.sync.lastError ? "Failed: "+S.sync.lastError : "All hours are in the sheet",
+              S.sync.lastError ? 6000 : 3000); });
+      return;
+    }
+    btn.textContent = "Reading\u2026";
+    pullFromSheet()
+      .then(j => {
+        const n = (j.punches||[]).length, m = (j.staff||[]).length;
+        btn.disabled = false; btn.textContent = label;
+        if(!n && !m) return toast("That sheet has no hours in it yet", 4000);
+        if(!confirm("The sheet holds "+m+" staff and "+n+" shifts.\n\n" +
+                    "Replace everything on this iPad with that? " +
+                    "Anything here that never reached the sheet will be lost."))
+          return;
+        const r = applySnapshot(j);
+        renderMgr(); renderChips(); renderBanner();
+        toast("Restored "+r.staff+" staff and "+r.shifts+" shifts", 4000);
+      })
+      .catch(err => { btn.disabled = false; btn.textContent = label;
+                      syncFail(err); save(); toast("Could not read it: "+(err.message||err), 6000); });
+    return;
   }
   if(id === "st-exp"){
     const j = JSON.stringify(S,null,2);
@@ -974,14 +1192,20 @@ document.getElementById("su-go").addEventListener("click", () => {
 function boot(){
   buildPad(); renderDots(); tick(); renderChips();
   if(!S.setup || !S.managerPin) return show("scr-setup");
-  renderBanner(); show("scr-clock"); runWeeklyCheck();
+  renderBanner(); renderSyncNote(); show("scr-clock");
+  runWeeklyCheck(); pushAll(false);
 }
 load(); boot();
 setInterval(tick,1000);
 setInterval(renderChips,30000);
 setInterval(runWeeklyCheck,15*60*1000);
+/* retry anything the wifi swallowed, and re-send everything hourly as a
+   self-heal in case a single push was lost */
+setInterval(() => pushAll(false), 3*60*1000);
+setInterval(() => pushAll(true), 60*60*1000);
+window.addEventListener("online", () => pushAll(false));
 document.addEventListener("visibilitychange", () => {
-  if(!document.hidden){ tick(); renderChips(); runWeeklyCheck(); }
+  if(!document.hidden){ tick(); renderChips(); runWeeklyCheck(); pushAll(false); }
 });
 
 /* keep the shop iPad awake */

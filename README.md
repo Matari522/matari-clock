@@ -28,8 +28,7 @@ goes straight to the punch screen every time.
 2. Click **+** (top right) → **New repository**. Name it `matari-clock`,
    set it to **Public**, click **Create repository**.
 3. On the new repo page click **uploading an existing file**.
-4. Drag in `index.html`, `manifest.webmanifest`, `sw.js`, and the whole
-   `icons` folder. Click **Commit changes**.
+4. Drag in every file from this folder. Click **Commit changes**.
 5. Go to **Settings → Pages**. Under *Source* pick **Deploy from a branch**,
    branch **main**, folder **/ (root)**. Click **Save**.
 6. Wait about a minute, then reload that page — it shows your live link.
